@@ -1,0 +1,10 @@
+Component,Description,Estimated Cost USD,Function
+RPLIDAR A1M8,"2D rotating LiDAR sensor, 360 degrees, 12m range",99.00,Environmental scanning
+Arduino Nano ESP32,"Dual-core microcontroller with built-in WiFi",20.00,Processing and communications
+5V USB Power Bank,"Rechargeable 5V supply, approx. 2A output",15.00,System power supply
+PETG Filament (Natural),3D printed spherical enclosure material,10.00,Protective shell
+Clear Acrylic Sheet,LiDAR sensor window in equatorial slot,5.00,Optical scan window
+Hinge and Latch Hardware,Opening mechanism and seal clip,5.00,Mechanical access
+Wiring and Connectors,"UART, power, and motor wiring harness",8.00,Electrical interconnect
+Mounting Hardware,Internal cradle screws and standoffs,3.00,Mechanical mounting
+Lead Shot / Bolts,Self-righting ballast at sphere base,5.00,Low center of gravity

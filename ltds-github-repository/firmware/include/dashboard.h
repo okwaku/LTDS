@@ -1,0 +1,270 @@
+#pragma once
+#include <Arduino.h>
+
+const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>LTDS Dashboard</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #111827;
+      color: #e5e7eb;
+    }
+    body {
+      margin: 0;
+      display: grid;
+      min-height: 100vh;
+      grid-template-rows: auto 1fr auto;
+    }
+    header {
+      padding: 14px 18px;
+      border-bottom: 1px solid #374151;
+      display: flex;
+      gap: 18px;
+      align-items: center;
+      flex-wrap: wrap;
+      background: #0f172a;
+    }
+    h1 {
+      font-size: 18px;
+      margin: 0;
+      letter-spacing: 0.04em;
+    }
+    .pill {
+      border: 1px solid #4b5563;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 13px;
+      background: #111827;
+    }
+    main {
+      display: grid;
+      grid-template-columns: minmax(300px, 1fr) 290px;
+      gap: 16px;
+      padding: 16px;
+    }
+    canvas {
+      width: 100%;
+      height: min(75vh, 760px);
+      background: radial-gradient(circle at center, #0b1120 0%, #020617 100%);
+      border: 1px solid #374151;
+      border-radius: 16px;
+    }
+    aside {
+      border: 1px solid #374151;
+      border-radius: 16px;
+      padding: 14px;
+      background: #0f172a;
+    }
+    .cluster {
+      padding: 10px;
+      border-bottom: 1px solid #374151;
+      font-size: 13px;
+    }
+    .cluster:last-child {
+      border-bottom: none;
+    }
+    .legend {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+      font-size: 13px;
+    }
+    .dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+    footer {
+      padding: 8px 16px;
+      color: #9ca3af;
+      font-size: 12px;
+    }
+    @media (max-width: 850px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+      canvas {
+        height: 62vh;
+      }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>LiDAR Threat Detection System</h1>
+  <span class="pill" id="status">Connecting...</span>
+  <span class="pill" id="stats">0 points / 0 clusters</span>
+  <span class="pill" id="time">No updates yet</span>
+</header>
+
+<main>
+  <canvas id="scan" width="900" height="900"></canvas>
+  <aside>
+    <h2 style="margin-top:0;font-size:16px;">Detected Clusters</h2>
+    <div id="clusters"></div>
+    <div class="legend">
+      <div><span class="dot" style="background:#22c55e"></span>Point cloud</div>
+      <div><span class="dot" style="background:#ef4444"></span>PERSON</div>
+      <div><span class="dot" style="background:#f59e0b"></span>OBJECT</div>
+      <div><span class="dot" style="background:#60a5fa"></span>WALL</div>
+    </div>
+  </aside>
+</main>
+
+<footer>
+  Prototype dashboard. Distance rings are approximate. Validate before operational use.
+</footer>
+
+<script>
+const canvas = document.getElementById("scan");
+const ctx = canvas.getContext("2d");
+const statusEl = document.getElementById("status");
+const statsEl = document.getElementById("stats");
+const timeEl = document.getElementById("time");
+const clustersEl = document.getElementById("clusters");
+
+const maxRangeMm = 6000;
+
+function polarToXY(angleDeg, distanceMm) {
+  const r = (angleDeg - 90) * Math.PI / 180;
+  return {
+    x: Math.cos(r) * distanceMm,
+    y: Math.sin(r) * distanceMm
+  };
+}
+
+function drawGrid() {
+  const w = canvas.width;
+  const h = canvas.height;
+  const cx = w / 2;
+  const cy = h / 2;
+  const scale = Math.min(w, h) * 0.46 / maxRangeMm;
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  ctx.strokeStyle = "#1f2937";
+  ctx.lineWidth = 1;
+  for (let ring = 1000; ring <= maxRangeMm; ring += 1000) {
+    ctx.beginPath();
+    ctx.arc(0, 0, ring * scale, 0, 2 * Math.PI);
+    ctx.stroke();
+    ctx.fillStyle = "#6b7280";
+    ctx.fillText(`${ring / 1000}m`, 6, -ring * scale + 12);
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(-maxRangeMm * scale, 0);
+  ctx.lineTo(maxRangeMm * scale, 0);
+  ctx.moveTo(0, -maxRangeMm * scale);
+  ctx.lineTo(0, maxRangeMm * scale);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function colorFor(label) {
+  if (label === "PERSON") return "#ef4444";
+  if (label === "WALL") return "#60a5fa";
+  return "#f59e0b";
+}
+
+function render(payload) {
+  drawGrid();
+
+  const w = canvas.width;
+  const h = canvas.height;
+  const cx = w / 2;
+  const cy = h / 2;
+  const scale = Math.min(w, h) * 0.46 / maxRangeMm;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  const points = payload.points || [];
+  ctx.fillStyle = "#22c55e";
+  for (const p of points) {
+    const xy = polarToXY(p.a ?? p.angle, p.d ?? p.distance);
+    ctx.beginPath();
+    ctx.arc(xy.x * scale, xy.y * scale, 2, 0, 2 * Math.PI);
+    ctx.fill();
+  }
+
+  const clusters = payload.clusters || [];
+  for (const c of clusters) {
+    ctx.strokeStyle = colorFor(c.label);
+    ctx.fillStyle = colorFor(c.label);
+    ctx.lineWidth = 2;
+    const x = (c.x || 0) * scale;
+    const y = (c.y || 0) * scale;
+    const r = Math.max(10, (c.width || 300) * scale / 2);
+
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, 2 * Math.PI);
+    ctx.stroke();
+    ctx.fillText(c.label || "OBJECT", x + r + 4, y);
+  }
+
+  ctx.restore();
+
+  statsEl.textContent = `${points.length} points / ${clusters.length} clusters`;
+  timeEl.textContent = new Date().toLocaleTimeString();
+
+  clustersEl.innerHTML = clusters.length
+    ? clusters.map((c, i) => `
+      <div class="cluster">
+        <strong style="color:${colorFor(c.label)}">${i + 1}. ${c.label}</strong><br>
+        x: ${Math.round(c.x || 0)} mm, y: ${Math.round(c.y || 0)} mm<br>
+        width: ${Math.round(c.width || 0)} mm, points: ${c.points || c.point_count || 0}<br>
+        moving: ${c.moving ? "yes" : "no"}
+      </div>
+    `).join("")
+    : "<p style='color:#9ca3af'>No clusters detected.</p>";
+}
+
+function connect() {
+  const url = `ws://${location.host}/ws`;
+  const ws = new WebSocket(url);
+
+  ws.onopen = () => {
+    statusEl.textContent = "Connected";
+    statusEl.style.color = "#22c55e";
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      render(JSON.parse(event.data));
+    } catch (err) {
+      console.error("Bad LTDS payload", err, event.data);
+    }
+  };
+
+  ws.onclose = () => {
+    statusEl.textContent = "Disconnected. Reconnecting...";
+    statusEl.style.color = "#f59e0b";
+    setTimeout(connect, 1500);
+  };
+
+  ws.onerror = () => {
+    statusEl.textContent = "WebSocket error";
+    statusEl.style.color = "#ef4444";
+  };
+}
+
+drawGrid();
+connect();
+</script>
+</body>
+</html>
+
+)rawliteral";
